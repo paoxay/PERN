@@ -27,13 +27,7 @@ if (-not (Test-Command "npm.cmd")) {
 
 Set-Location $projectRoot
 
-if (-not (Test-Path $envPath)) {
-  if (Test-Path $envExamplePath) {
-    Copy-Item $envExamplePath $envPath
-  } else {
-    Set-Content -Path $envPath -Value 'DATABASE_URL="file:./prisma/dev.db"', 'PORT=4000' -Encoding UTF8
-  }
-}
+Set-Content -Path $envPath -Value 'DATABASE_URL="file:./prisma/dev.db"', 'PORT=4000' -Encoding UTF8
 
 Invoke-Step "Checking dependencies" {
   npm.cmd install
@@ -41,7 +35,11 @@ Invoke-Step "Checking dependencies" {
 
 Invoke-Step "Preparing database" {
   npm.cmd run db:generate
-  npm.cmd run db:push
+  try {
+    npm.cmd run db:push
+  } catch {
+    Write-Warning "Database update failed. The app will try to use the included database."
+  }
 }
 
 if (-not (Test-Path $seedFlagPath)) {

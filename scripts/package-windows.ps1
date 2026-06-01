@@ -12,7 +12,7 @@ if (Test-Path $stagingDir) {
 New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 
 $excludeDirNames = @("node_modules", "release", ".git")
-$excludeFiles = @("\server\.env", "\server\.seeded")
+$excludeFiles = @("\server\.env")
 
 Get-ChildItem -Path $projectRoot -Recurse -Force | ForEach-Object {
   $relative = $_.FullName.Substring($projectRoot.Length)
