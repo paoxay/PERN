@@ -35,10 +35,8 @@ if (-not (Test-Path $envPath)) {
   }
 }
 
-if (-not (Test-Path (Join-Path $projectRoot "node_modules"))) {
-  Invoke-Step "Installing dependencies" {
-    npm.cmd install
-  }
+Invoke-Step "Checking dependencies" {
+  npm.cmd install
 }
 
 Invoke-Step "Preparing database" {
@@ -48,7 +46,11 @@ Invoke-Step "Preparing database" {
 
 if (-not (Test-Path $seedFlagPath)) {
   Invoke-Step "Adding starter data" {
-    npm.cmd run db:seed
+    try {
+      npm.cmd run db:seed
+    } catch {
+      Write-Warning "Starter data could not be added. The app will start with an empty menu/stock database."
+    }
     Set-Content -Path $seedFlagPath -Value (Get-Date -Format s) -Encoding ASCII
   }
 }

@@ -4,5 +4,8 @@ dist/
 server/.env
 server/prisma/dev.db
 server/prisma/dev.db-journal
+**/dev.db
+**/dev.db-journal
+**/.seeded
 client/.env
 *.log
