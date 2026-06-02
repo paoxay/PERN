@@ -6,6 +6,9 @@ $clientDir = Join-Path $projectRoot "client"
 $envPath = Join-Path $serverDir ".env"
 $envExamplePath = Join-Path $projectRoot ".env.example"
 $seedFlagPath = Join-Path $serverDir ".seeded"
+$portableNode = Join-Path $projectRoot "runtime\node.exe"
+$builtServer = Join-Path $serverDir "dist\index.js"
+$builtClient = Join-Path $clientDir "dist\index.html"
 
 function Test-Command($name) {
   return $null -ne (Get-Command $name -ErrorAction SilentlyContinue)
@@ -18,16 +21,26 @@ function Invoke-Step($message, $scriptBlock) {
 }
 
 if (-not (Test-Command "node")) {
-  throw "Node.js is not installed. Install Node.js LTS, then double-click Start POS.cmd again."
-}
-
-if (-not (Test-Command "npm.cmd")) {
-  throw "npm is not available. Reinstall Node.js LTS, then double-click Start POS.cmd again."
+  if (-not (Test-Path $portableNode)) {
+    throw "Node.js is not installed and portable node.exe was not found. Use the release zip or install Node.js LTS."
+  }
 }
 
 Set-Location $projectRoot
 
 Set-Content -Path $envPath -Value 'DATABASE_URL="file:./prisma/dev.db"', 'PORT=4000' -Encoding UTF8
+
+if ((Test-Path $portableNode) -and (Test-Path $builtServer) -and (Test-Path $builtClient)) {
+  Write-Host ""
+  Write-Host "==> Starting POS app"
+  Start-Process "http://localhost:4000"
+  & $portableNode $builtServer
+  exit $LASTEXITCODE
+}
+
+if (-not (Test-Command "npm.cmd")) {
+  throw "npm is not available. Reinstall Node.js LTS, then double-click Start POS.cmd again."
+}
 
 Invoke-Step "Checking dependencies" {
   npm.cmd install

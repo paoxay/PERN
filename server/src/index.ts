@@ -25,6 +25,13 @@ app.use("/api/menu-items", menuRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/reports", reportsRouter);
 
+const clientDist = path.resolve(serverRoot, "..", "client", "dist");
+app.use(express.static(clientDist));
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.sendFile(path.join(clientDist, "index.html"));
+});
+
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(500).json({ error: "internal error" });
