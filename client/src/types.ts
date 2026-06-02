@@ -21,11 +21,13 @@ export type OrderStatus = "DRAFT" | "IN_KITCHEN" | "AWAITING_PAYMENT" | "PAID" |
 export type OrderLine = {
   id: number;
   orderId: number;
-  menuItemId: number;
+  menuItemId: number | null;
+  inventoryItemId: number | null;
   qty: number;
   unitPrice: string;
   note: string | null;
   menuItem?: MenuItem;
+  inventoryItem?: InventoryItem;
 };
 
 export type PaymentLine = {
@@ -50,4 +52,29 @@ export type Order = {
   grandTotal?: string;
   lines?: OrderLine[];
   payments?: PaymentLine[];
+};
+
+export type DashboardSummary = {
+  period: string;
+  cash: string;
+  transfer: string;
+  total: string;
+  paidOrdersCount: number;
+  stockItemsCount: number;
+  lowStockCount: number;
+  stockSales: Array<{
+    id: number;
+    name: string;
+    unit: string;
+    qtySold: number;
+    sales: string;
+  }>;
+  inventory: InventoryItem[];
+  lowStock: Array<{
+    id: number;
+    name: string;
+    quantity: string | null;
+    unit: string;
+    reorderLevel: string | null;
+  }>;
 };

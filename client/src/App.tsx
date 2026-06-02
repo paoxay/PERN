@@ -1,5 +1,6 @@
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 
+import DashboardPage from "./pages/DashboardPage";
 import HistoryPage from "./pages/HistoryPage";
 import InventoryPage from "./pages/InventoryPage";
 import MenuPage from "./pages/MenuPage";
@@ -30,6 +31,10 @@ export default function App() {
           <span className="nav-link__emoji" aria-hidden>🧾</span>
           ຂາຍ / ບິນ
         </NavLink>
+        <NavLink to="/dashboard" className={navClass}>
+          <span className="nav-link__emoji" aria-hidden>📈</span>
+          Dashboard
+        </NavLink>
         <NavLink to="/history" className={navClass}>
           <span className="nav-link__emoji" aria-hidden>🕘</span>
           ປະຫວັດອໍເດີ້
@@ -55,6 +60,7 @@ export default function App() {
       <main className="main">
         <Routes>
           <Route path="/" element={<PosPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/menu" element={<MenuPage />} />

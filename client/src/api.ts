@@ -1,4 +1,4 @@
-import type { InventoryItem, MenuItem, Order } from "./types";
+import type { DashboardSummary, InventoryItem, MenuItem, Order } from "./types";
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -75,7 +75,7 @@ export const api = {
 
   addLine: (
     orderId: number,
-    payload: { menuItemId: number; qty: number; note?: string | null },
+    payload: { menuItemId?: number; inventoryItemId?: number; qty: number; note?: string | null },
   ) =>
     fetchJson<Order>(`/api/orders/${orderId}/lines`, {
       method: "POST",
@@ -116,4 +116,5 @@ export const api = {
       total: string;
       paidOrdersCount: number;
     }>(`/api/reports/month?year=${year}&month=${month}`),
+  dashboard: () => fetchJson<DashboardSummary>("/api/reports/dashboard"),
 };

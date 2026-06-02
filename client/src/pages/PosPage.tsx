@@ -5,10 +5,11 @@ import PageHeader from "../components/PageHeader";
 import { lak } from "../lib/format";
 import { statusClass, statusLabel } from "../lib/orderStatus";
 import { useReceiptSettings, type ReceiptSettings } from "../lib/receiptSettings";
-import type { MenuItem, Order } from "../types";
+import type { InventoryItem, MenuItem, Order } from "../types";
 
 export default function PosPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [stock, setStock] = useState<InventoryItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [active, setActive] = useState<Order | null>(null);
   const [customer, setCustomer] = useState("");
@@ -31,8 +32,9 @@ export default function PosPage() {
 
   async function refresh() {
     setErr(null);
-    const [m, all] = await Promise.all([api.listMenu(), api.listOrders()]);
+    const [m, stockRows, all] = await Promise.all([api.listMenu(), api.listInventory(), api.listOrders()]);
     setMenu(m);
+    setStock(stockRows);
     setOrders(all);
     if (active) {
       const found = all.find((o) => o.id === active.id);
@@ -145,6 +147,7 @@ export default function PosPage() {
             <OrderPanel
               order={active}
               menu={activeMenu}
+              stock={stock}
               onError={setErr}
               onUpdated={(o) => {
                 setActive(o);
@@ -170,6 +173,7 @@ export default function PosPage() {
 function OrderPanel({
   order,
   menu,
+  stock,
   onError,
   onUpdated,
   onCancelled,
@@ -177,6 +181,7 @@ function OrderPanel({
 }: {
   order: Order;
   menu: MenuItem[];
+  stock: InventoryItem[];
   onError: (m: string) => void;
   onUpdated: (o: Order) => void;
   onCancelled: () => void;
@@ -189,6 +194,7 @@ function OrderPanel({
 
   const tum = menu.filter((m) => m.category === "TUM");
   const general = menu.filter((m) => m.category === "GENERAL");
+  const sellableStock = stock.filter((item) => item.costPerUnit && Number(item.costPerUnit) > 0);
 
   function completeOrder(printReceipt: boolean) {
     api
@@ -246,7 +252,7 @@ function OrderPanel({
         </div>
       </div>
 
-      {editable && menu.length > 0 ? (
+      {editable && (menu.length > 0 || sellableStock.length > 0) ? (
         <>
           {tum.length > 0 ? (
             <>
@@ -268,6 +274,18 @@ function OrderPanel({
               <div className="menu-grid no-print">
                 {general.map((m) => (
                   <MenuChip key={m.id} item={m} orderId={order.id} onUpdated={onUpdated} onError={onError} />
+                ))}
+              </div>
+            </>
+          ) : null}
+          {sellableStock.length > 0 ? (
+            <>
+              <p className="muted" style={{ margin: "1rem 0 0.35rem", fontWeight: 600 }}>
+                ສິນຄ້າສະຕ໋ອກ
+              </p>
+              <div className="menu-grid no-print">
+                {sellableStock.map((item) => (
+                  <StockChip key={item.id} item={item} orderId={order.id} onUpdated={onUpdated} onError={onError} />
                 ))}
               </div>
             </>
@@ -295,7 +313,7 @@ function OrderPanel({
             ) : (
               lines.map((l) => (
                 <tr key={l.id}>
-                  <td>{l.menuItem?.name ?? `#${l.menuItemId}`}</td>
+                  <td>{l.menuItem?.name ?? l.inventoryItem?.name ?? `#${l.menuItemId ?? l.inventoryItemId}`}</td>
                   <td>{l.qty}</td>
                   <td>{lak(Number(l.unitPrice) * l.qty)}</td>
                   <td>
@@ -404,6 +422,39 @@ function MenuChip({
   );
 }
 
+function StockChip({
+  item,
+  orderId,
+  onUpdated,
+  onError,
+}: {
+  item: InventoryItem;
+  orderId: number;
+  onUpdated: (o: Order) => void;
+  onError: (m: string) => void;
+}) {
+  const remaining = item.quantity === null ? "ບໍ່ລະບຸ" : `${item.quantity} ${item.unit}`;
+  const disabled = item.quantity !== null && Number(item.quantity) <= 0;
+
+  return (
+    <button
+      type="button"
+      className="menu-chip"
+      disabled={disabled}
+      onClick={() =>
+        api
+          .addLine(orderId, { inventoryItemId: item.id, qty: 1 })
+          .then(onUpdated)
+          .catch((e) => onError(e instanceof Error ? e.message : "ເພີ່ມສິນຄ້າສະຕ໋ອກບໍ່ສຳເລັດ"))
+      }
+    >
+      <span className="menu-chip__name">{item.name}</span>
+      <span className="menu-chip__price">{lak(item.costPerUnit ?? 0)}</span>
+      <span className="menu-chip__stock">ເຫຼືອ {remaining}</span>
+    </button>
+  );
+}
+
 function PrintBlock({ order, settings }: { order: Order; settings: ReceiptSettings }) {
   const lines = order.lines ?? [];
   const printedAt = new Date().toLocaleString("lo-LA", {
@@ -436,7 +487,7 @@ function PrintBlock({ order, settings }: { order: Order; settings: ReceiptSettin
         {lines.map((l) => (
           <div key={l.id}>
             <span>
-              {l.menuItem?.name} x{l.qty}
+              {l.menuItem?.name ?? l.inventoryItem?.name} x{l.qty}
             </span>
             <strong className="receipt-only">{lak(Number(l.unitPrice) * l.qty)}</strong>
           </div>

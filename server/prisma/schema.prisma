@@ -16,6 +16,7 @@ model InventoryItem {
   reorderLevel          Decimal?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
+  lines                 OrderLine[]
 }
 
 enum MenuCategory {
@@ -58,8 +59,10 @@ model OrderLine {
   id           Int       @id @default(autoincrement())
   orderId      Int
   order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId   Int
-  menuItem     MenuItem  @relation(fields: [menuItemId], references: [id])
+  menuItemId   Int?
+  menuItem     MenuItem? @relation(fields: [menuItemId], references: [id])
+  inventoryItemId Int?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   qty          Int
   unitPrice    Decimal
   note         String?

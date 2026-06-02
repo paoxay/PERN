@@ -667,6 +667,34 @@ tbody tr:last-child td {
   font-weight: 500;
 }
 
+.menu-chip__stock {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.menu-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
 .actions-bar {
   display: flex;
   flex-wrap: wrap;
@@ -956,6 +984,11 @@ tbody tr:last-child td {
   }
 
   .stat-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-stats,
+  .dashboard-grid {
     grid-template-columns: 1fr;
   }
 }

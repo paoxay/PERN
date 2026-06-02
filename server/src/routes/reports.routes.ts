@@ -24,6 +24,107 @@ function utcMonthBoundsUtc(year: number, month1to12: number): { startUtc: Date; 
   return { startUtc, endUtcExclusive: startNext };
 }
 
+function todayBoundsLocal(): { start: Date; endExclusive: Date } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endExclusive = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return { start, endExclusive };
+}
+
+reportsRouter.get("/dashboard", async (_req, res, next) => {
+  try {
+    const bounds = todayBoundsLocal();
+
+    const [payments, paidOrders, inventory] = await Promise.all([
+      prisma.paymentLine.findMany({
+        where: {
+          createdAt: { gte: bounds.start, lt: bounds.endExclusive },
+          order: { status: OrderStatus.PAID },
+        },
+      }),
+      prisma.order.findMany({
+        where: {
+          status: OrderStatus.PAID,
+          paidAt: { gte: bounds.start, lt: bounds.endExclusive },
+        },
+        include: {
+          lines: { include: { menuItem: true, inventoryItem: true } },
+        },
+        orderBy: { paidAt: "desc" },
+      }),
+      prisma.inventoryItem.findMany({ orderBy: { name: "asc" } }),
+    ]);
+
+    let cash = new Decimal("0");
+    let transfer = new Decimal("0");
+    for (const payment of payments) {
+      if (payment.method === "CASH") cash = cash.plus(payment.amount);
+      else transfer = transfer.plus(payment.amount);
+    }
+
+    const stockSales = new Map<
+      number,
+      { id: number; name: string; unit: string; qtySold: number; sales: Decimal }
+    >();
+
+    for (const order of paidOrders) {
+      for (const line of order.lines) {
+        if (!line.inventoryItemId || !line.inventoryItem) continue;
+        const current =
+          stockSales.get(line.inventoryItemId) ?? {
+            id: line.inventoryItemId,
+            name: line.inventoryItem.name,
+            unit: line.inventoryItem.unit,
+            qtySold: 0,
+            sales: new Decimal("0"),
+          };
+        current.qtySold += line.qty;
+        current.sales = current.sales.plus(new Decimal(line.unitPrice).times(line.qty));
+        stockSales.set(line.inventoryItemId, current);
+      }
+    }
+
+    const lowStock = inventory.filter((item) => {
+      if (item.quantity === null || item.reorderLevel === null) return false;
+      return new Decimal(item.quantity).lte(item.reorderLevel);
+    });
+
+    res.json({
+      period: bounds.start.toISOString().slice(0, 10),
+      cash: cash.toFixed(2),
+      transfer: transfer.toFixed(2),
+      total: cash.plus(transfer).toFixed(2),
+      paidOrdersCount: paidOrders.length,
+      stockItemsCount: inventory.length,
+      lowStockCount: lowStock.length,
+      stockSales: Array.from(stockSales.values()).map((row) => ({
+        id: row.id,
+        name: row.name,
+        unit: row.unit,
+        qtySold: row.qtySold,
+        sales: row.sales.toFixed(2),
+      })),
+      inventory: inventory.map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity?.toFixed() ?? null,
+        unit: item.unit,
+        costPerUnit: item.costPerUnit?.toFixed() ?? null,
+        reorderLevel: item.reorderLevel?.toFixed() ?? null,
+      })),
+      lowStock: lowStock.map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity?.toFixed() ?? null,
+        unit: item.unit,
+        reorderLevel: item.reorderLevel?.toFixed() ?? null,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 reportsRouter.get("/day", async (req, res, next) => {
   try {
     const dateKey = String(req.query.date ?? "").slice(0, 10);

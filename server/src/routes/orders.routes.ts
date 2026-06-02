@@ -25,7 +25,7 @@ ordersRouter.post("/", async (req, res, next) => {
         customerLabel: customerLabel || null,
       },
       include: {
-        lines: { include: { menuItem: true } },
+        lines: { include: { menuItem: true, inventoryItem: true } },
       },
     });
     res.status(201).json(decorate(order));
@@ -47,7 +47,7 @@ ordersRouter.get("/", async (req, res, next) => {
       orderBy: { createdAt: "desc" },
       take: 100,
       include: {
-        lines: { include: { menuItem: true } },
+        lines: { include: { menuItem: true, inventoryItem: true } },
         payments: true,
       },
     });
@@ -65,7 +65,7 @@ ordersRouter.get("/:id", async (req, res, next) => {
     const order = await prisma.order.findUnique({
       where: { id },
       include: {
-        lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+        lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
         payments: true,
       },
     });
@@ -93,7 +93,7 @@ ordersRouter.patch("/:id", async (req, res, next) => {
             : {}),
         },
         include: {
-          lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+          lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
           payments: true,
         },
       });
@@ -111,11 +111,21 @@ ordersRouter.post("/:id/lines", async (req, res, next) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
 
-    const menuItemId = Number(req.body?.menuItemId);
+    const menuItemId =
+      req.body?.menuItemId === undefined || req.body?.menuItemId === null
+        ? null
+        : Number(req.body.menuItemId);
+    const inventoryItemId =
+      req.body?.inventoryItemId === undefined || req.body?.inventoryItemId === null
+        ? null
+        : Number(req.body.inventoryItemId);
     const qty = Number(req.body?.qty ?? req.body?.quantity ?? 0);
     const note = req.body?.note ? String(req.body.note).slice(0, 200) : null;
 
-    if (!Number.isFinite(menuItemId)) return res.status(400).json({ error: "menuItemId invalid" });
+    const hasMenuItem = menuItemId !== null && Number.isFinite(menuItemId);
+    const hasInventoryItem = inventoryItemId !== null && Number.isFinite(inventoryItemId);
+    if (hasMenuItem === hasInventoryItem)
+      return res.status(400).json({ error: "choose one menu item or stock item" });
     if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: "qty invalid" });
 
     await prisma.$transaction(async (tx) => {
@@ -124,22 +134,45 @@ ordersRouter.post("/:id/lines", async (req, res, next) => {
         throw Object.assign(new Error("ORDER_LOCKED"), { code: 409 });
       }
 
-      const menuItem = await tx.menuItem.findFirst({
-        where: { id: menuItemId, isActive: true },
-      });
-      if (!menuItem) throw Object.assign(new Error("MENU_NOT_FOUND"), { code: 404 });
+      const menuItem = hasMenuItem
+        ? await tx.menuItem.findFirst({
+            where: { id: menuItemId!, isActive: true },
+          })
+        : null;
+      if (hasMenuItem && !menuItem) throw Object.assign(new Error("MENU_NOT_FOUND"), { code: 404 });
+
+      const inventoryItem = hasInventoryItem
+        ? await tx.inventoryItem.findUnique({
+            where: { id: inventoryItemId! },
+          })
+        : null;
+      if (hasInventoryItem && !inventoryItem)
+        throw Object.assign(new Error("STOCK_NOT_FOUND"), { code: 404 });
+      if (inventoryItem && inventoryItem.quantity !== null && new Decimal(inventoryItem.quantity).lt(qty)) {
+        throw Object.assign(new Error("INSUFFICIENT_STOCK"), {
+          code: 409,
+          itemName: inventoryItem.name,
+          available: inventoryItem.quantity.toFixed(),
+        });
+      }
 
       await tx.orderLine.create({
         data: {
           orderId: id,
-          menuItemId,
+          ...(hasMenuItem ? { menuItemId: menuItemId! } : {}),
+          ...(hasInventoryItem ? { inventoryItemId: inventoryItemId! } : {}),
           qty,
-          unitPrice: menuItem.price,
+          unitPrice: menuItem ? menuItem.price : inventoryItem!.costPerUnit ?? "0",
           note,
         },
       });
-    }).catch((err: Error & { code?: number }) => {
+    }).catch((err: Error & { code?: number; itemName?: string; available?: string }) => {
       const c = err.code;
+      if (err.message === "INSUFFICIENT_STOCK")
+        return res.status(409).json({
+          error: `stock not enough: ${err.itemName ?? ""}`,
+          available: err.available,
+        });
       if (c === 409) return res.status(409).json({ error: "order not editable after kitchen print" });
       if (c === 404) return res.status(404).json({ error: "menu item inactive or missing" });
       throw err;
@@ -148,7 +181,7 @@ ordersRouter.post("/:id/lines", async (req, res, next) => {
 
     const full = await prisma.order.findUnique({
       where: { id },
-      include: { lines: { include: { menuItem: true }, orderBy: { id: "asc" } } },
+      include: { lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } } },
     });
     res.status(201).json(decorate(full!));
   } catch (e) {
@@ -182,7 +215,7 @@ ordersRouter.delete("/:id/lines/:lineId", async (req, res, next) => {
 
     const full = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { lines: { include: { menuItem: true }, orderBy: { id: "asc" } } },
+      include: { lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } } },
     });
     res.json(decorate(full!));
   } catch (e) {
@@ -223,7 +256,7 @@ ordersRouter.post("/:id/send-kitchen", async (req, res, next) => {
     const full = await prisma.order.findUnique({
       where: { id },
       include: {
-        lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+        lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
       },
     });
     res.json(decorate(full!));
@@ -260,7 +293,7 @@ ordersRouter.post("/:id/awaiting-payment", async (req, res, next) => {
     const full = await prisma.order.findUnique({
       where: { id },
       include: {
-        lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+        lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
       },
     });
     res.json(decorate(full!));
@@ -287,7 +320,7 @@ ordersRouter.post("/:id/cancel", async (req, res, next) => {
           where: { id },
           data: { status: OrderStatus.CANCELLED },
           include: {
-            lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+            lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
             payments: true,
           },
         });
@@ -358,6 +391,33 @@ ordersRouter.post("/:id/pay", async (req, res, next) => {
           paid: paySum.toFixed(),
         });
 
+      for (const line of order.lines) {
+        if (line.inventoryItemId === null) continue;
+        const item = await tx.inventoryItem.findUnique({ where: { id: line.inventoryItemId } });
+        if (!item) {
+          throw Object.assign(new Error("STOCK_NOT_FOUND"), { code: 404 });
+        }
+        if (item.quantity === null) {
+          throw Object.assign(new Error("STOCK_NOT_COUNTED"), {
+            code: 409,
+            itemName: item.name,
+          });
+        }
+
+        const nextQty = new Decimal(item.quantity).minus(line.qty);
+        if (nextQty.lt(0)) {
+          throw Object.assign(new Error("INSUFFICIENT_STOCK"), {
+            code: 409,
+            itemName: item.name,
+            available: item.quantity.toFixed(),
+          });
+        }
+        await tx.inventoryItem.update({
+          where: { id: line.inventoryItemId },
+          data: { quantity: nextQty.toFixed() },
+        });
+      }
+
       await tx.paymentLine.deleteMany({ where: { orderId: id } });
       for (const p of normalized) {
         await tx.paymentLine.create({
@@ -376,7 +436,7 @@ ordersRouter.post("/:id/pay", async (req, res, next) => {
           paidAt: new Date(),
         },
         include: {
-          lines: { include: { menuItem: true }, orderBy: { id: "asc" } },
+          lines: { include: { menuItem: true, inventoryItem: true }, orderBy: { id: "asc" } },
           payments: true,
         },
       });
@@ -384,8 +444,21 @@ ordersRouter.post("/:id/pay", async (req, res, next) => {
 
       res.json(decorate(paidOrder));
     } catch (err) {
-      const e = err as Error & { code?: number; expected?: string; paid?: string };
+      const e = err as Error & {
+        code?: number;
+        expected?: string;
+        paid?: string;
+        itemName?: string;
+        available?: string;
+      };
       if (e.code === 404) return res.status(404).json({ error: "not found" });
+      if (e.message === "STOCK_NOT_COUNTED")
+        return res.status(409).json({ error: `stock quantity not set: ${e.itemName ?? ""}` });
+      if (e.message === "INSUFFICIENT_STOCK")
+        return res.status(409).json({
+          error: `stock not enough: ${e.itemName ?? ""}`,
+          available: e.available,
+        });
       if (e.code === 409) return res.status(409).json({ error: "mark ready for payment first" });
       if (e.code === 400 && e.message === "MISMATCH_TOTAL") {
         return res.status(400).json({
